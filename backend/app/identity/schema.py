@@ -13,6 +13,13 @@ class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_]+$")
     password: str = Field(min_length=8, max_length=128)
     nickname: str | None = Field(default=None, max_length=80)
+class AdminUserCreate(BaseModel):
+    """平台管理员创建普通账号，手机号初始未验证。"""
+    model_config = ConfigDict(extra="forbid")
+    mobile: str = Field(pattern=r"^1[3-9][0-9]{9}$")
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_]+$")
+    password: str = Field(min_length=8, max_length=128)
+    nickname: str | None = Field(default=None, max_length=80)
 class PasswordLogin(BaseModel):
     """账号密码登录。"""
     username: str = Field(min_length=1, max_length=64)

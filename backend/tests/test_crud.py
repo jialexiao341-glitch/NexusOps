@@ -23,10 +23,22 @@ def client():
     app.dependency_overrides.clear()
     engine.dispose()
 
+@pytest.fixture
+def business_client(client):
+    from datetime import datetime, timezone
+    from app.identity.service import tokens
+    from app.merchant.model import User, UserPlatformRole
+    with next(app.dependency_overrides[get_db]()) as db:
+        user = User(username='admin', mobile='13000000000', password_hash='x', mobile_verified_at=datetime.now(timezone.utc).replace(tzinfo=None), status='active')
+        db.add(user); db.flush(); db.add(UserPlatformRole(user_id=user.id, role='platform_admin')); db.commit()
+        client.headers['Authorization'] = 'Bearer ' + tokens(user)['access_token']
+    return client
+
 def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
 
-def test_merchant_and_product_crud(client):
+def test_merchant_and_product_crud(business_client):
+    client = business_client
     merchant = client.post("/api/v1/merchants", json={"name": "Shop"})
     assert merchant.status_code == 201
     mid = merchant.json()["id"]
@@ -41,14 +53,16 @@ def test_merchant_and_product_crud(client):
     assert client.delete(f"/api/v1/merchants/{mid}").status_code == 204
     assert client.get(f"/api/v1/products/{pid}").status_code == 404
 
-def test_validation_and_missing_merchant(client):
+def test_validation_and_missing_merchant(business_client):
+    client = business_client
     assert client.post("/api/v1/products", json={"merchant_id": 999, "name": "Tea", "price": "1.00"}).status_code == 404
     assert client.post("/api/v1/products", json={"merchant_id": 1, "name": "Tea", "price": "-1"}).status_code == 422
     mid = client.post("/api/v1/merchants", json={"name": "Shop"}).json()["id"]
     assert client.patch(f"/api/v1/merchants/{mid}", json={"name": None}).status_code == 422
     assert client.get("/api/v1/merchants?limit=101").status_code == 422
 
-def test_category_sku_inventory_flow(client):
+def test_category_sku_inventory_flow(business_client):
+    client = business_client
     api = '/api/v1'
     mid = client.post(api + '/merchants', json={'name': 'Shop'}).json()['id']
     other = client.post(api + '/merchants', json={'name': 'Other'}).json()['id']

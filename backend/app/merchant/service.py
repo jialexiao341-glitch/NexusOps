@@ -1,9 +1,9 @@
 """商户与商品业务服务：校验业务规则并协调数据访问。"""
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 from app.merchant import crud
-from app.merchant.model import Inventory, Merchant, Product, ProductSku, ProductCategory
+from app.merchant.model import Inventory, Merchant, MerchantMembership, Product, ProductSku, ProductCategory
 
 def require(db: Session, model, item_id: int):
     """按主键查找记录；不存在时返回 404。"""
@@ -50,6 +50,7 @@ def delete_merchant(db: Session, item_id: int):
         raise HTTPException(status_code=409, detail="商户存在分类，不能删除")
     if db.scalar(select(Product.id).where(Product.merchant_id == item_id).limit(1)) is not None:
         raise HTTPException(status_code=409, detail="商户存在商品，不能删除")
+    db.execute(delete(MerchantMembership).where(MerchantMembership.merchant_id == item_id))
     crud.delete(db, item)
 
 

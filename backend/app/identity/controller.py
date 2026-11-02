@@ -1,4 +1,5 @@
 """开发版注册、登录和当前用户接口。"""
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -11,6 +12,11 @@ bearer = HTTPBearer(auto_error=False)
 def current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), db: Session = Depends(get_db)):
     """从访问令牌获取有效用户。"""
     if credentials is None: raise HTTPException(401, "请先登录")
+    return service.token_user(db, credentials.credentials, "access")
+
+def optional_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), db: Session = Depends(get_db)):
+    if credentials is None:
+        return None
     return service.token_user(db, credentials.credentials, "access")
 
 @router.post("/auth/codes", summary="获取模拟验证码")
@@ -37,6 +43,9 @@ def login_sms(data: schema.SmsLogin, db: Session = Depends(get_db)):
     service.consume_code(data.mobile, "login", data.code)
     user = crud.by_mobile(db, data.mobile)
     if not user or user.status != "active": raise HTTPException(401, "账号不存在或已停用")
+    if user.mobile_verified_at is None:
+        user.mobile_verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.commit()
     return service.tokens(user)
 
 @router.post("/auth/refresh", summary="刷新访问令牌")

@@ -24,7 +24,7 @@ class User(Timestamps, Base):
     username: Mapped[str] = mapped_column(String(64), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     nickname: Mapped[str | None] = mapped_column(String(80))
-    mobile_verified_at: Mapped[datetime] = mapped_column(DateTime)
+    mobile_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active")
 
 class Merchant(Timestamps, Base):
