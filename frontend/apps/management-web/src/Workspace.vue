@@ -1,28 +1,82 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue';
-import { LayoutDashboard, Database, Settings, ShoppingCart, Megaphone, ChevronDown, Store, Package, Tags, UserRound, UsersRound, UserRoundCog, Network, Activity, Bell, LogOut, X } from '@lucide/vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { closeTabs, type CloseTabScope } from './tab-state';
+import { LayoutDashboard, Database, Settings, ShoppingCart, Megaphone, ChevronDown, Store, Package, Tags, UserRound, UsersRound, UserRoundCog, Network, Activity, Bell, LogOut, Pin, PinOff, Maximize2, Minimize2, RotateCw, ExternalLink, ArrowLeftToLine, ArrowRightToLine, FoldHorizontal, ArrowRightLeft, X } from '@lucide/vue';
 import ManagementList from './ManagementList.vue';
 import Profile from './Profile.vue';
 import Catalog from './Catalog.vue';
 import UserManagement from './UserManagement.vue';
 defineProps<{ user: { username: string; nickname: string | null; mobile: string }; token: string }>();
-const page = ref('工作台');
-const openTabs = ref<string[]>(['工作台']);
+const tabNames = ['工作台', '商户管理', '商品管理', '分类与规格', '个人中心', '用户管理'];
+const requestedTab = new URLSearchParams(window.location.search).get('tab');
+const initialTab = requestedTab && tabNames.includes(requestedTab) ? requestedTab : '工作台';
+function loadPinnedTabs():string[] {
+  try {
+    const saved:unknown=JSON.parse(sessionStorage.getItem('nexusops_pinned_tabs') || '[]');
+    return ['工作台', ...new Set(Array.isArray(saved) ? saved.filter((name):name is string => typeof name==='string' && name!=='工作台' && tabNames.includes(name)) : [])];
+  } catch { return ['工作台']; }
+}
+const page = ref(initialTab);
+const pinnedTabs = ref<string[]>(loadPinnedTabs());
+const openTabs = ref<string[]>(pinnedTabs.value.includes(initialTab) ? [...pinnedTabs.value] : [...pinnedTabs.value, initialTab]);
+watch(pinnedTabs, value=>sessionStorage.setItem('nexusops_pinned_tabs', JSON.stringify(value)), {deep:true});
+const versions = ref<Record<string, number>>({});
+const tabMenu = ref<{name:string; x:number; y:number} | null>(null);
+const maximized = ref(false);
 const tabIcons: Record<string, typeof LayoutDashboard> = { '工作台': LayoutDashboard, '商户管理': Store, '商品管理': Package, '分类与规格': Tags, '个人中心': UserRound, '用户管理': UsersRound, '角色管理': UserRoundCog, '部门管理': Network, '运行监控': Activity };
 watch(page, value => { if (!openTabs.value.includes(value)) openTabs.value.push(value); }, { flush: 'sync' });
-function closeTab(name: string) {
-  if (name === '工作台') return;
-  const index = openTabs.value.indexOf(name);
-  if (index < 0) return;
-  if (page.value === name) page.value = openTabs.value[index + 1] ?? openTabs.value[index - 1] ?? '工作台';
-  openTabs.value.splice(index, 1);
+function closeTab(name: string) { runClose(name, 'current'); }
+function runClose(name:string, scope:CloseTabScope) {
+  const result = closeTabs(openTabs.value, pinnedTabs.value, page.value, name, scope);
+  openTabs.value = result.tabs;
+  page.value = result.active;
 }
+function openTabMenu(event:MouseEvent, name:string) {
+  const width=214, height=400;
+  tabMenu.value={name, x:Math.max(4, Math.min(event.clientX, window.innerWidth-width-4)), y:Math.max(4, Math.min(event.clientY, window.innerHeight-height-4))};
+}
+function togglePin(name:string) {
+  if(name==='工作台') return;
+  const index=openTabs.value.indexOf(name);
+  if(pinnedTabs.value.includes(name)) {
+    pinnedTabs.value=pinnedTabs.value.filter(item=>item!==name);
+    openTabs.value.splice(index,1);
+    openTabs.value.splice(pinnedTabs.value.length,0,name);
+  } else {
+    pinnedTabs.value.push(name);
+    openTabs.value.splice(index,1);
+    openTabs.value.splice(pinnedTabs.value.length-1,0,name);
+  }
+}
+function refreshTab(name:string) { versions.value[name]=(versions.value[name] || 0)+1; }
+function openNewWindow(name:string) {
+  const url=new URL(window.location.href);
+  url.searchParams.set('tab',name);
+  window.open(url.toString(), '_blank');
+}
+const tabMenuItems = computed(()=>{
+  if (!tabMenu.value) return [];
+  const name=tabMenu.value.name, index=openTabs.value.indexOf(name), pinned=pinnedTabs.value.includes(name);
+  const canClose=(item:string)=>!pinnedTabs.value.includes(item);
+  return [
+    {key:'close',label:'关闭',icon:X,disabled:pinned, action:()=>runClose(name,'current')},
+    {key:'pin',label:pinned?'取消固定':'固定',icon:pinned?PinOff:Pin,disabled:name==='工作台',action:()=>togglePin(name)},
+    {key:'maximize',label:maximized.value?'还原':'最大化',icon:maximized.value?Minimize2:Maximize2,action:()=>{page.value=name;maximized.value=!maximized.value;}},
+    {key:'reload',label:'重新加载',icon:RotateCw,disabled:name!==page.value,action:()=>refreshTab(name)},
+    {key:'window',label:'在新窗口打开',icon:ExternalLink,separator:true,action:()=>openNewWindow(name)},
+    {key:'left',label:'关闭左侧标签页',icon:ArrowLeftToLine,disabled:!openTabs.value.slice(0,index).some(canClose),action:()=>runClose(name,'left')},
+    {key:'right',label:'关闭右侧标签页',icon:ArrowRightToLine,separator:true,disabled:!openTabs.value.slice(index+1).some(canClose),action:()=>runClose(name,'right')},
+    {key:'other',label:'关闭其它标签页',icon:FoldHorizontal,disabled:!openTabs.value.some(item=>item!==name && canClose(item)),action:()=>runClose(name,'other')},
+    {key:'all',label:'关闭全部标签页',icon:ArrowRightLeft,disabled:!openTabs.value.some(canClose),action:()=>runClose(name,'all')},
+  ];
+});
+function executeTabAction(item:{disabled?:boolean;action:()=>void}) { if(item.disabled) return; tabMenu.value=null; item.action(); }
 
 const collapsed = ref(false);
 const userMenuOpen = ref(false);
 const userMenu = ref<HTMLElement | null>(null);
-function closeUserMenu(event: MouseEvent) { if (!userMenu.value?.contains(event.target as Node)) userMenuOpen.value = false; }
-function handleMenuKey(event: KeyboardEvent) { if (event.key === 'Escape') userMenuOpen.value = false; }
+function closeUserMenu(event: MouseEvent) { if (!userMenu.value?.contains(event.target as Node)) userMenuOpen.value = false; if (!(event.target as Element).closest('.tab-context-menu')) tabMenu.value=null; }
+function handleMenuKey(event: KeyboardEvent) { if (event.key === 'Escape') { if (tabMenu.value) tabMenu.value=null; else if (userMenuOpen.value) userMenuOpen.value=false; else maximized.value=false; } }
 onMounted(() => { document.addEventListener('click', closeUserMenu); document.addEventListener('keydown', handleMenuKey); });
 onUnmounted(() => { document.removeEventListener('click', closeUserMenu); document.removeEventListener('keydown', handleMenuKey); });
 function openUserPage(name: string) { page.value = name; userMenuOpen.value = false; }
@@ -34,7 +88,7 @@ const groups = [{ title:'业务管理', icon:Database, items:['商户管理','�
 const shortcuts = [{ icon: '▦', name: '商户管理', desc: '查看与管理入驻商户' }, { icon: '◇', name: '商品管理', desc: '管理商品与库存信息' }, { icon: '≡', name: '交易管理', desc: '跟进订单与交易状态' }, { icon: '✳', name: '营销活动', desc: '规划商圈运营活动' }];
 </script>
 <template>
-  <div class="workspace" :class="{ 'sidebar-hidden': collapsed }">
+  <div class="workspace" :class="{ 'sidebar-hidden': collapsed, 'content-maximized': maximized }">
     <aside class="sidebar" :class="{ collapsed }">
       <div class="side-brand"><img src="/logo.svg" alt=""><div><strong>Nexus<span>Ops</span></strong><small>智慧商圈运营平台</small></div></div>
       
@@ -51,13 +105,15 @@ const shortcuts = [{ icon: '▦', name: '商户管理', desc: '查看与管理�
     </aside>
     <div class="workspace-main">
       <header class="topbar"><div class="topbar-start"><button class="sidebar-toggle" type="button" :aria-label="collapsed ? '展开侧边栏' : '收起侧边栏'" :aria-expanded="!collapsed" @click="collapsed = !collapsed"><span aria-hidden="true"></span></button><div class="breadcrumb"><span class="crumb-icon">▤</span> 业务管理 <span>›</span> <strong>{{ page }}</strong></div></div><div class="top-user"><div ref="userMenu" class="user-menu"><button class="avatar-trigger" type="button" aria-label="账户菜单" aria-haspopup="true" :aria-expanded="userMenuOpen" @click="userMenuOpen=!userMenuOpen"><span class="avatar">{{ (user.nickname || user.username).slice(0, 1) }}</span><span class="online-dot" aria-hidden="true"></span></button><div v-if="userMenuOpen" class="user-dropdown"><div class="user-dropdown-header"><span class="menu-avatar">{{ (user.nickname || user.username).slice(0, 1) }}<span class="online-dot" aria-hidden="true"></span></span><span class="user-dropdown-identity"><strong>{{ user.nickname || user.username }}</strong><small>{{ user.username }}</small></span></div><div class="user-dropdown-actions"><button type="button" @click="openUserPage('工作台')"><LayoutDashboard aria-hidden="true" />运营总览</button><button type="button" @click="openUserPage('个人中心')"><UserRound aria-hidden="true" />个人中心</button><button type="button" disabled title="站内通知尚未开放"><Bell aria-hidden="true" />站内通知</button><button type="button" class="menu-logout" @click="$emit('logout')"><LogOut aria-hidden="true" />退出登录</button></div></div></div></div></header>
-      <div class="page-tabs" aria-label="已打开的页面"><div class="tab-list"><div v-for="name in openTabs" :key="name" class="page-tab" :class="{ 'active-tab': page === name }"><button class="tab-select" :aria-current="page === name ? 'page' : undefined" @click="page = name"><component :is="tabIcons[name]" class="tab-icon" aria-hidden="true" />{{name}}</button><button v-if="name !== '工作台'" class="tab-close" :aria-label="`关闭${name}`" @click="closeTab(name)"><X aria-hidden="true" /></button></div></div></div>
-      <ManagementList v-if="openTabs.includes('商户管理')" v-show="page === '商户管理'" kind="merchant" :token="token" />
-      <ManagementList v-if="openTabs.includes('商品管理')" v-show="page === '商品管理'" kind="product" :token="token" />
-      <Catalog :token="token" v-if="openTabs.includes('分类与规格')" v-show="page === '分类与规格'" />
-      <UserManagement v-if="openTabs.includes('用户管理')" v-show="page === '用户管理'" :token="token" />
-      <Profile v-if="openTabs.includes('个人中心')" v-show="page === '个人中心'" :user="user" :token="token" @updated="$emit('updated', $event)" />
-      <main v-show="page === '工作台'" class="dashboard">
+      <div class="page-tabs" aria-label="已打开的页面"><div class="tab-list"><div v-for="name in openTabs" :key="name" class="page-tab" :class="{ 'active-tab': page === name }" @contextmenu.prevent="openTabMenu($event, name)"><button class="tab-select" :aria-current="page === name ? 'page' : undefined" @click="page = name"><component :is="tabIcons[name]" class="tab-icon" aria-hidden="true" />{{name}}</button><Pin v-if="pinnedTabs.includes(name)" class="tab-pin" aria-label="已固定" /><button v-else class="tab-close" :aria-label="`关闭${name}`" @click="closeTab(name)"><X aria-hidden="true" /></button></div></div></div>
+      <Teleport to="body"><div v-if="tabMenu" class="tab-context-menu" role="menu" :style="{left:tabMenu.x+'px',top:tabMenu.y+'px'}" @contextmenu.prevent><template v-for="item in tabMenuItems" :key="item.key"><button type="button" role="menuitem" :disabled="item.disabled" @click="executeTabAction(item)"><component :is="item.icon" aria-hidden="true" /><span>{{ item.label }}</span></button><div v-if="item.separator" class="tab-menu-separator"></div></template></div></Teleport>
+      <button v-if="maximized" class="restore-view" aria-label="退出最大化" title="退出最大化" @click="maximized=false"><Minimize2 aria-hidden="true" /></button>
+      <ManagementList v-if="openTabs.includes('商户管理')" :key="'商户管理-'+(versions['商户管理'] || 0)" v-show="page === '商户管理'" kind="merchant" :token="token" />
+      <ManagementList v-if="openTabs.includes('商品管理')" :key="'商品管理-'+(versions['商品管理'] || 0)" v-show="page === '商品管理'" kind="product" :token="token" />
+      <Catalog :token="token" v-if="openTabs.includes('分类与规格')" :key="'分类与规格-'+(versions['分类与规格'] || 0)" v-show="page === '分类与规格'" />
+      <UserManagement v-if="openTabs.includes('用户管理')" :key="'用户管理-'+(versions['用户管理'] || 0)" v-show="page === '用户管理'" :token="token" />
+      <Profile v-if="openTabs.includes('个人中心')" :key="'个人中心-'+(versions['个人中心'] || 0)" v-show="page === '个人中心'" :user="user" :token="token" @updated="$emit('updated', $event)" />
+      <main :key="'工作台-'+(versions['工作台'] || 0)" v-show="page === '工作台'" class="dashboard">
         <div class="page-heading"><div><h1>工作台<span>.</span></h1><div class="heading-sub">你的商圈运营，从这里开始。</div></div><div class="date-pill">◷ &nbsp; {{ new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }).format(new Date()) }}</div></div>
         <section class="welcome"><div class="welcome-copy"><div class="welcome-label"><span></span> 你的运营概览</div><h2>你好，{{ user.nickname || user.username }} <span>✳</span></h2><p>欢迎回到 NexusOps。每一次用心经营，<br>都值得被看见。</p></div><div class="welcome-art" aria-hidden="true"><div class="art-circle"></div><div class="art-grid"></div><div class="art-text">N<span> / </span>O</div></div></section>
         <div class="content-grid"><div class="content-primary"><section class="block"><div class="block-heading"><div><h2>快捷入口</h2></div><span>常用功能，一步直达</span></div><div class="shortcuts"><button v-for="item in shortcuts" :key="item.name" type="button" class="shortcut" :class="{ clickable: available.includes(item.name) }" :disabled="!available.includes(item.name)" @click="page = item.name"><span class="shortcut-icon">{{ item.icon }}</span><strong>{{ item.name }}</strong><small>{{ item.desc }}</small><span class="coming">{{ available.includes(item.name) ? '进入管理' : '即将开放' }} <b>↗</b></span></button></div></section><section class="block overview"><div class="block-heading"><div><h2>经营概览</h2></div><span>数据接入后展示</span></div><div class="metrics"><div v-for="metric in ['入驻商户', '在售商品', '交易订单', '运营活动']" :key="metric"><span>{{ metric }}</span><strong>—</strong><small>暂无数据</small></div></div></section></div><aside class="content-side"><section class="block todo"><div class="block-heading"><div><h2>待办事项</h2></div><span class="badge">待接入</span></div><div class="empty-mark">✓</div><strong>暂时没有待办事项</strong><p>需要关注的工作会在这里展示</p></section><section class="note"><span>✳</span><p>一点一滴，<br><strong>成就更好的生意。</strong></p></section></aside></div>
@@ -95,6 +151,9 @@ const shortcuts = [{ icon: '▦', name: '商户管理', desc: '查看与管理�
 
 /* 账户入口位于头像下拉菜单。 */
 .topbar{position:relative;z-index:5}.top-user .user-menu{position:relative;display:block}.top-user .avatar-trigger{position:relative;display:grid;place-items:center;width:40px;height:40px;padding:0;margin:0;border:0;border-radius:50%;background:transparent;cursor:pointer}.top-user .avatar-trigger .avatar{width:36px;height:36px}.online-dot{position:absolute;right:0;bottom:0;width:12px;height:12px;border:2px solid white;border-radius:50%;background:#42c979}.top-user .user-dropdown{display:block;position:absolute;right:0;top:calc(100% + 8px);width:240px;overflow:hidden;border:1px solid #dce4ef;border-radius:7px;background:#fff;box-shadow:0 5px 16px #14253c26;color:#172233}.top-user .user-dropdown-header{display:flex;align-items:center;gap:12px;padding:16px;border-bottom:1px solid #e3e8f0}.menu-avatar{position:relative;display:grid;place-items:center;width:48px;height:48px;flex:none;border-radius:50%;background:#e7ebff;color:#5267ff;font-size:18px}.top-user .user-dropdown-identity{display:block;min-width:0}.top-user .user-dropdown-identity strong,.top-user .user-dropdown-identity small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-user .user-dropdown-identity strong{font-size:14px;font-weight:500;color:#172233}.top-user .user-dropdown-identity small{margin-top:4px;color:#718096;font-size:12px}.top-user .user-dropdown-actions{display:block;padding:5px 0}.top-user .user-dropdown-actions button{display:flex;align-items:center;gap:20px;width:100%;height:42px;margin:0;padding:0 18px;border:0;background:#fff;color:#172233;font:inherit;font-size:14px;text-align:left;cursor:pointer}.top-user .user-dropdown-actions button:hover:not(:disabled){background:#f2f4ff;color:#5267ff}.top-user .user-dropdown-actions button:disabled{color:#a4adba;cursor:not-allowed}.user-dropdown-actions svg{width:18px;height:18px;flex:none;stroke-width:1.8}.top-user .user-dropdown-actions .menu-logout{border-top:1px solid #e3e8f0;margin-top:5px}.avatar-trigger:focus-visible,.user-dropdown-actions button:focus-visible{outline:2px solid #5267ff;outline-offset:-2px}@media(max-width:700px){.top-user .user-menu,.top-user .user-dropdown,.top-user .user-dropdown-header,.top-user .user-dropdown-actions,.top-user .user-dropdown-identity{display:block}.top-user .user-dropdown-header{display:flex}.user-dropdown{max-width:calc(100vw - 32px)}}
+
+/* 标签右键菜单对齐参考项目的图标、间距与分组。 */
+.tab-pin{width:15px;height:15px;margin:0 12px 0 2px;flex:none;stroke-width:1.8}.tab-context-menu{position:fixed;z-index:1000;width:214px;max-height:calc(100vh - 8px);overflow-y:auto;padding:5px;background:#fff;border:1px solid #dce4ef;border-radius:7px;box-shadow:0 3px 10px #172b4d26;color:#172233}.tab-context-menu button{display:flex;align-items:center;gap:14px;width:100%;height:40px;padding:0 10px;border:0;border-radius:5px;background:transparent;color:inherit;text-align:left;font:14px 'Microsoft YaHei',sans-serif;cursor:pointer;white-space:nowrap}.tab-context-menu button svg{width:17px;height:17px;flex:none;stroke-width:1.8}.tab-context-menu button:hover:not(:disabled),.tab-context-menu button:focus-visible{background:#eef2f7;outline:none}.tab-context-menu button:disabled{color:#a4adba;cursor:not-allowed}.tab-menu-separator{height:1px;background:#e1e6ee;margin:4px -5px}.content-maximized .sidebar,.content-maximized .topbar,.content-maximized .page-tabs{display:none}.content-maximized .workspace-main{width:100%;height:100vh}.restore-view{position:fixed;right:16px;top:16px;z-index:900;display:grid;place-items:center;width:36px;height:36px;border:1px solid #dce4ef;border-radius:6px;background:#fff;color:#5267ff;box-shadow:0 2px 8px #172b4d1c;cursor:pointer}.restore-view svg{width:18px;height:18px}
 </style>
 
 
