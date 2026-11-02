@@ -1,0 +1,36 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: nexusops
+      MYSQL_USER: nexusops
+      MYSQL_PASSWORD: nexusops
+      MYSQL_ROOT_PASSWORD: local-root-password
+    ports: ["3306:3306"]
+    volumes: ["mysql_data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  api:
+    build: ./backend
+    env_file: ./backend/env/.env.dev
+    environment:
+      DATABASE_URL: mysql+pymysql://nexusops:nexusops@mysql:3306/nexusops
+      REDIS_URL: redis://redis:6379/0
+    ports: ["8887:8887"]
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8887"]
+volumes:
+  mysql_data:
