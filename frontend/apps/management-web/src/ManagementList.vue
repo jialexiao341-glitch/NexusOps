@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 type Item = { id:number; name:string; status:'active'|'inactive'; description?:string; merchant_id?:number; category_id?:number|null; price?:string };
-const props = defineProps<{ kind:'merchant'|'product' }>();
+const props = defineProps<{ kind:'merchant'|'product'; token:string }>();
 const items=ref<Item[]>([]), loading=ref(false), error=ref(''), saving=ref(false), offset=ref(0), hasNext=ref(false), showForm=ref(false), editing=ref<Item|null>(null);
 const selectedId=ref<number|null>(null), queryId=ref(''), queried=ref(false);
 const selected=computed(()=>items.value.find(item=>item.id===selectedId.value));
@@ -10,7 +10,7 @@ const title=computed(()=>props.kind==='merchant'?'商户':'商品');
 const endpoint=computed(()=>props.kind==='merchant'?'/merchants':'/products');
 async function api(path:string, method='GET', body?:unknown) {
   let response:Response;
-  try { response=await fetch('/api/v1'+path,{method,headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)}); } catch { throw new Error('无法连接服务，请检查后端是否启动。'); }
+  try { response=await fetch('/api/v1'+path,{method,headers:{Authorization:`Bearer ${props.token}`,...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body)}); } catch { throw new Error('无法连接服务，请检查后端是否启动。'); }
   if(!response.ok){const data=await response.json().catch(()=>({})); throw new Error(typeof data.detail==='string'?data.detail:'操作失败，请检查输入后重试。');}
   return response.status===204?null:response.json();
 }
@@ -38,4 +38,19 @@ function page(delta:number){offset.value+=delta*20;void load();}
 
 
 .management{padding:2px;gap:2px}.filters{min-height:68px;padding:10px 12px;border-radius:0}.panel{padding:4px;border-radius:0}.toolbar{min-height:52px;padding-bottom:4px}.pagination{padding:8px 4px}@media(max-width:700px){.management{padding:2px;gap:2px}.filters{padding:10px}.panel{padding:4px}}
+
+/* 表格控件参考紧凑型业务列表，保留现有单选行为。 */
+.table-wrap{border:1px solid #dce4ef;border-radius:5px;min-height:160px}
+table{border-collapse:separate;border-spacing:0}
+th,td{box-sizing:border-box;height:50px;padding:10px 14px;border-bottom:1px solid #dce4ef}
+th{position:relative;background:#eef3f9;color:#344054;font-weight:600}
+th:not(:last-child)::after{content:'';position:absolute;right:0;top:12px;bottom:12px;width:1px;background:#dce4ef}
+tbody tr:hover{background:#f7f9ff}
+tbody tr:last-child td{border-bottom:0}
+td:first-child,th:first-child{width:70px}
+td input[type='radio']{appearance:none;display:inline-grid;place-content:center;width:20px;height:20px;margin:0;vertical-align:middle;border:1px solid #c7d1e0;border-radius:3px;background:#fff;cursor:pointer}
+td input[type='radio']:checked{border-color:#5267ff;background:#5267ff}
+td input[type='radio']:checked::before{content:'';width:9px;height:5px;border:solid #fff;border-width:0 0 2px 2px;transform:translateY(-1px) rotate(-45deg)}
+.status{display:inline-block;padding:3px 9px;font-size:13px;line-height:20px}
+.link{padding:5px 7px;border-radius:4px}.link:hover{background:#eef1ff}.link.danger:hover{background:#fff1f0}
 </style>

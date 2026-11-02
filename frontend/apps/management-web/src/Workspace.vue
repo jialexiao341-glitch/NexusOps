@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import { LayoutDashboard, Database, Settings, ShoppingCart, Megaphone, ChevronDown, Store, Package, Tags, UserRound, X } from '@lucide/vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { LayoutDashboard, Database, Settings, ShoppingCart, Megaphone, ChevronDown, Store, Package, Tags, UserRound, UsersRound, UserRoundCog, Network, Activity, Bell, LogOut, X } from '@lucide/vue';
 import ManagementList from './ManagementList.vue';
 import Profile from './Profile.vue';
 import Catalog from './Catalog.vue';
+import UserManagement from './UserManagement.vue';
 defineProps<{ user: { username: string; nickname: string | null; mobile: string }; token: string }>();
 const page = ref('工作台');
 const openTabs = ref<string[]>(['工作台']);
-const tabIcons: Record<string, typeof LayoutDashboard> = { '工作台': LayoutDashboard, '商户管理': Store, '商品管理': Package, '分类与规格': Tags, '个人资料': UserRound };
+const tabIcons: Record<string, typeof LayoutDashboard> = { '工作台': LayoutDashboard, '商户管理': Store, '商品管理': Package, '分类与规格': Tags, '个人中心': UserRound, '用户管理': UsersRound, '角色管理': UserRoundCog, '部门管理': Network, '运行监控': Activity };
 watch(page, value => { if (!openTabs.value.includes(value)) openTabs.value.push(value); }, { flush: 'sync' });
 function closeTab(name: string) {
   if (name === '工作台') return;
@@ -18,11 +19,18 @@ function closeTab(name: string) {
 }
 
 const collapsed = ref(false);
-const available = ['工作台', '商户管理', '商品管理', '分类与规格', '个人资料'];
+const userMenuOpen = ref(false);
+const userMenu = ref<HTMLElement | null>(null);
+function closeUserMenu(event: MouseEvent) { if (!userMenu.value?.contains(event.target as Node)) userMenuOpen.value = false; }
+function handleMenuKey(event: KeyboardEvent) { if (event.key === 'Escape') userMenuOpen.value = false; }
+onMounted(() => { document.addEventListener('click', closeUserMenu); document.addEventListener('keydown', handleMenuKey); });
+onUnmounted(() => { document.removeEventListener('click', closeUserMenu); document.removeEventListener('keydown', handleMenuKey); });
+function openUserPage(name: string) { page.value = name; userMenuOpen.value = false; }
+const available = ['工作台', '商户管理', '商品管理', '分类与规格', '个人中心', '用户管理'];
 defineEmits<{ logout: []; updated: [user: { username: string; nickname: string | null; mobile: string }] }>();
 const openGroups = ref<string[]>(['业务管理']);
 function toggleGroup(group:string) { openGroups.value = openGroups.value.includes(group) ? openGroups.value.filter(item => item !== group) : [...openGroups.value, group]; }
-const groups = [{ title:'业务管理', icon:Database, items:['商户管理','商品管理','分类与规格'] }, { title:'平台管理', icon:Settings, items:['用户管理','平台运营','个人资料','系统设置'] }];
+const groups = [{ title:'业务管理', icon:Database, items:['商户管理','商品管理','分类与规格'] }, { title:'平台管理', icon:Settings, items:['用户管理','角色管理','部门管理','运行监控'] }];
 const shortcuts = [{ icon: '▦', name: '商户管理', desc: '查看与管理入驻商户' }, { icon: '◇', name: '商品管理', desc: '管理商品与库存信息' }, { icon: '≡', name: '交易管理', desc: '跟进订单与交易状态' }, { icon: '✳', name: '营销活动', desc: '规划商圈运营活动' }];
 </script>
 <template>
@@ -35,19 +43,20 @@ const shortcuts = [{ icon: '▦', name: '商户管理', desc: '查看与管理�
         <button class="nav-home" :class="{selected:page==='工作台'}" @click="page='工作台'"><LayoutDashboard class="nav-icon" aria-hidden="true" /><span>工作台</span></button>
         <div v-for="group in groups" :key="group.title" class="nav-group">
           <button class="group-toggle" :class="{'group-active': group.items.includes(page)}" :aria-expanded="openGroups.includes(group.title)" @click="toggleGroup(group.title)"><component :is="group.icon" class="nav-icon" aria-hidden="true" /><span>{{group.title}}</span><ChevronDown class="chevron" :class="{open:openGroups.includes(group.title)}" aria-hidden="true" /></button>
-          <div v-if="openGroups.includes(group.title)" class="group-items"><button v-for="item in group.items" :key="item" :class="{selected:item===page}" :disabled="!available.includes(item)" @click="page=item">{{item}}</button></div>
+          <div v-if="openGroups.includes(group.title)" class="group-items"><button v-for="item in group.items" :key="item" :class="{selected:item===page}" :disabled="!available.includes(item)" @click="page=item"><component :is="tabIcons[item]" class="subnav-icon" aria-hidden="true" /><span>{{item}}</span></button></div>
         </div>
         <button class="nav-home" disabled><ShoppingCart class="nav-icon" aria-hidden="true" /><span>交易管理</span></button><button class="nav-home" disabled><Megaphone class="nav-icon" aria-hidden="true" /><span>营销活动</span></button>
       </nav>
       <div class="side-bottom"><span class="status-dot"></span><div><strong>运营工作台</strong><small>让每一份经营更从容</small></div></div>
     </aside>
     <div class="workspace-main">
-      <header class="topbar"><div class="topbar-start"><button class="sidebar-toggle" type="button" :aria-label="collapsed ? '展开侧边栏' : '收起侧边栏'" :aria-expanded="!collapsed" @click="collapsed = !collapsed"><span aria-hidden="true"></span></button><div class="breadcrumb"><span class="crumb-icon">▤</span> 业务管理 <span>›</span> <strong>{{ page }}</strong></div></div><div class="top-user"><span class="avatar">{{ (user.nickname || user.username).slice(0, 1) }}</span><div><strong>{{ user.nickname || user.username }}</strong><small>{{ user.username }}</small></div><button @click="$emit('logout')">退出登录</button></div></header>
+      <header class="topbar"><div class="topbar-start"><button class="sidebar-toggle" type="button" :aria-label="collapsed ? '展开侧边栏' : '收起侧边栏'" :aria-expanded="!collapsed" @click="collapsed = !collapsed"><span aria-hidden="true"></span></button><div class="breadcrumb"><span class="crumb-icon">▤</span> 业务管理 <span>›</span> <strong>{{ page }}</strong></div></div><div class="top-user"><div ref="userMenu" class="user-menu"><button class="avatar-trigger" type="button" aria-label="账户菜单" aria-haspopup="true" :aria-expanded="userMenuOpen" @click="userMenuOpen=!userMenuOpen"><span class="avatar">{{ (user.nickname || user.username).slice(0, 1) }}</span><span class="online-dot" aria-hidden="true"></span></button><div v-if="userMenuOpen" class="user-dropdown"><div class="user-dropdown-header"><span class="menu-avatar">{{ (user.nickname || user.username).slice(0, 1) }}<span class="online-dot" aria-hidden="true"></span></span><span class="user-dropdown-identity"><strong>{{ user.nickname || user.username }}</strong><small>{{ user.username }}</small></span></div><div class="user-dropdown-actions"><button type="button" @click="openUserPage('工作台')"><LayoutDashboard aria-hidden="true" />运营总览</button><button type="button" @click="openUserPage('个人中心')"><UserRound aria-hidden="true" />个人中心</button><button type="button" disabled title="站内通知尚未开放"><Bell aria-hidden="true" />站内通知</button><button type="button" class="menu-logout" @click="$emit('logout')"><LogOut aria-hidden="true" />退出登录</button></div></div></div></div></header>
       <div class="page-tabs" aria-label="已打开的页面"><div class="tab-list"><div v-for="name in openTabs" :key="name" class="page-tab" :class="{ 'active-tab': page === name }"><button class="tab-select" :aria-current="page === name ? 'page' : undefined" @click="page = name"><component :is="tabIcons[name]" class="tab-icon" aria-hidden="true" />{{name}}</button><button v-if="name !== '工作台'" class="tab-close" :aria-label="`关闭${name}`" @click="closeTab(name)"><X aria-hidden="true" /></button></div></div></div>
-      <ManagementList v-if="openTabs.includes('商户管理')" v-show="page === '商户管理'" kind="merchant" />
-      <ManagementList v-if="openTabs.includes('商品管理')" v-show="page === '商品管理'" kind="product" />
-      <Catalog v-if="openTabs.includes('分类与规格')" v-show="page === '分类与规格'" />
-      <Profile v-if="openTabs.includes('个人资料')" v-show="page === '个人资料'" :user="user" :token="token" @updated="$emit('updated', $event)" />
+      <ManagementList v-if="openTabs.includes('商户管理')" v-show="page === '商户管理'" kind="merchant" :token="token" />
+      <ManagementList v-if="openTabs.includes('商品管理')" v-show="page === '商品管理'" kind="product" :token="token" />
+      <Catalog :token="token" v-if="openTabs.includes('分类与规格')" v-show="page === '分类与规格'" />
+      <UserManagement v-if="openTabs.includes('用户管理')" v-show="page === '用户管理'" :token="token" />
+      <Profile v-if="openTabs.includes('个人中心')" v-show="page === '个人中心'" :user="user" :token="token" @updated="$emit('updated', $event)" />
       <main v-show="page === '工作台'" class="dashboard">
         <div class="page-heading"><div><h1>工作台<span>.</span></h1><div class="heading-sub">你的商圈运营，从这里开始。</div></div><div class="date-pill">◷ &nbsp; {{ new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }).format(new Date()) }}</div></div>
         <section class="welcome"><div class="welcome-copy"><div class="welcome-label"><span></span> 你的运营概览</div><h2>你好，{{ user.nickname || user.username }} <span>✳</span></h2><p>欢迎回到 NexusOps。每一次用心经营，<br>都值得被看见。</p></div><div class="welcome-art" aria-hidden="true"><div class="art-circle"></div><div class="art-grid"></div><div class="art-text">N<span> / </span>O</div></div></section>
@@ -73,6 +82,8 @@ const shortcuts = [{ icon: '▦', name: '商户管理', desc: '查看与管理�
 
 .sidebar nav{overflow:auto}.sidebar nav .nav-home,.sidebar nav .group-toggle{display:flex;align-items:center;width:100%;height:54px;padding:0 14px;gap:12px;border:0;border-radius:6px;background:transparent;color:#172233;font:inherit;font-size:15px;text-align:left;cursor:pointer}.sidebar nav .nav-home.selected,.sidebar nav .group-toggle.group-active{color:#5267ff}.sidebar nav .nav-home:disabled{color:#a4adba;cursor:default}.sidebar nav .chevron{margin-left:auto;color:#26364c;transform:rotate(-90deg);transition:transform .15s}.sidebar nav .chevron.open{transform:rotate(0)}.sidebar nav .group-items{padding:0 0 5px}.sidebar nav .group-items button{height:42px;padding:0 14px 0 48px;font-size:14px;color:#48596e}.sidebar nav .group-items button.selected{background:#eef0ff;color:#5267ff;font-weight:500}.sidebar nav .group-items button:disabled{color:#a4adba}.sidebar.collapsed nav{visibility:hidden}@media(max-width:700px){.sidebar nav .nav-home,.sidebar nav .group-toggle{font-size:14px;justify-content:flex-start}}
 
+.sidebar nav .group-items button{padding-left:30px;gap:10px}.sidebar nav .subnav-icon{width:18px;height:18px;flex:none;stroke-width:1.8}
+
 .sidebar nav svg.nav-icon{width:19px;height:19px;flex:none;stroke-width:1.8}.sidebar nav svg.chevron{width:16px;height:16px;flex:none;stroke-width:1.8}
 
 .page-tabs{align-items:stretch;overflow:hidden;padding:0 20px}.tab-list{display:flex;align-items:end;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;min-width:0}.page-tab{height:43px;display:flex;align-items:center;flex:none;position:relative;color:#263448}.page-tab:not(:last-child):not(.active-tab)::after{content:"";width:1px;height:20px;background:#e1e6ee;position:absolute;right:0}.page-tab.active-tab{background:#e8ebff;color:#5267ff;border-radius:7px 7px 0 0}.page-tabs .page-tab .tab-select{display:flex;align-items:center;gap:7px;height:43px;padding:0 8px 0 16px;color:inherit;white-space:nowrap}.page-tabs .page-tab:first-child .tab-select{padding-right:16px}.tab-icon{width:17px;height:17px;stroke-width:1.8}.page-tabs .page-tab .tab-close{height:30px;width:28px;padding:6px;margin-right:5px;display:grid;place-items:center;color:#657389;border-radius:4px}.tab-close svg{width:14px;height:14px}.page-tabs .page-tab .tab-close:hover{background:#d9def4;color:#263448}.page-tabs button:focus-visible{outline:2px solid #5267ff;outline-offset:-3px}@media(max-width:700px){.page-tabs{padding:0 8px}}
@@ -81,6 +92,9 @@ const shortcuts = [{ icon: '▦', name: '商户管理', desc: '查看与管理�
 
 
 .dashboard{padding:2px}.dashboard .page-heading{margin-bottom:2px}.dashboard .content-grid,.dashboard .content-primary,.dashboard .content-side{gap:2px}@media(max-width:700px){.dashboard{padding:2px}.dashboard .page-heading{margin-bottom:2px}.dashboard .content-grid,.dashboard .content-primary,.dashboard .content-side{gap:2px}}
+
+/* 账户入口位于头像下拉菜单。 */
+.topbar{position:relative;z-index:5}.top-user .user-menu{position:relative;display:block}.top-user .avatar-trigger{position:relative;display:grid;place-items:center;width:40px;height:40px;padding:0;margin:0;border:0;border-radius:50%;background:transparent;cursor:pointer}.top-user .avatar-trigger .avatar{width:36px;height:36px}.online-dot{position:absolute;right:0;bottom:0;width:12px;height:12px;border:2px solid white;border-radius:50%;background:#42c979}.top-user .user-dropdown{display:block;position:absolute;right:0;top:calc(100% + 8px);width:240px;overflow:hidden;border:1px solid #dce4ef;border-radius:7px;background:#fff;box-shadow:0 5px 16px #14253c26;color:#172233}.top-user .user-dropdown-header{display:flex;align-items:center;gap:12px;padding:16px;border-bottom:1px solid #e3e8f0}.menu-avatar{position:relative;display:grid;place-items:center;width:48px;height:48px;flex:none;border-radius:50%;background:#e7ebff;color:#5267ff;font-size:18px}.top-user .user-dropdown-identity{display:block;min-width:0}.top-user .user-dropdown-identity strong,.top-user .user-dropdown-identity small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-user .user-dropdown-identity strong{font-size:14px;font-weight:500;color:#172233}.top-user .user-dropdown-identity small{margin-top:4px;color:#718096;font-size:12px}.top-user .user-dropdown-actions{display:block;padding:5px 0}.top-user .user-dropdown-actions button{display:flex;align-items:center;gap:20px;width:100%;height:42px;margin:0;padding:0 18px;border:0;background:#fff;color:#172233;font:inherit;font-size:14px;text-align:left;cursor:pointer}.top-user .user-dropdown-actions button:hover:not(:disabled){background:#f2f4ff;color:#5267ff}.top-user .user-dropdown-actions button:disabled{color:#a4adba;cursor:not-allowed}.user-dropdown-actions svg{width:18px;height:18px;flex:none;stroke-width:1.8}.top-user .user-dropdown-actions .menu-logout{border-top:1px solid #e3e8f0;margin-top:5px}.avatar-trigger:focus-visible,.user-dropdown-actions button:focus-visible{outline:2px solid #5267ff;outline-offset:-2px}@media(max-width:700px){.top-user .user-menu,.top-user .user-dropdown,.top-user .user-dropdown-header,.top-user .user-dropdown-actions,.top-user .user-dropdown-identity{display:block}.top-user .user-dropdown-header{display:flex}.user-dropdown{max-width:calc(100vw - 32px)}}
 </style>
 
 

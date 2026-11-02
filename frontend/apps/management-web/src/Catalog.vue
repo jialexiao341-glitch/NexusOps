@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+const props = defineProps<{ token:string }>();
 type Category = {id:number; merchant_id:number; name:string; sort_order:number; status:string};
 type Sku = {id:number; product_id:number; name:string; price:string; status:string};
 const tab=ref<'category'|'sku'>('category'), merchant=ref(''), product=ref(''), categories=ref<Category[]>([]), skus=ref<Sku[]>([]), error=ref(''), message=ref(''), busy=ref(false);
@@ -8,7 +9,7 @@ const category=ref({name:'',sort_order:0,status:'active'}), sku=ref({name:'',pri
 const stocks=ref<Record<number,number>>({});
 watch(merchant,()=>{categories.value=[];resetCategory();});
 watch(product,()=>{skus.value=[];stocks.value={};resetSku();});
-async function api(path:string,method='GET',body?:unknown){const r=await fetch('/api/v1'+path,{method,headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(typeof d.detail==='string'?d.detail:'操作失败，请检查输入');}return r.status===204?null:r.json();}
+async function api(path:string,method='GET',body?:unknown){const r=await fetch('/api/v1'+path,{method,headers:{Authorization:`Bearer ${props.token}`,...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body)});if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(typeof d.detail==='string'?d.detail:'操作失败，请检查输入');}return r.status===204?null:r.json();}
 async function action(fn:()=>Promise<void>){error.value='';message.value='';busy.value=true;try{await fn();}catch(e){error.value=e instanceof Error?e.message:'操作失败';}finally{busy.value=false;}}
 function validId(value:string){if(!/^[1-9]\d*$/.test(value))throw new Error('请输入有效的编号');return Number(value);}
 async function loadCategories(){const id=validId(merchant.value);categories.value=await api(`/categories?merchant_id=${id}&limit=100`);}
