@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
+import ToastViewport from './ToastViewport.vue';
+import { showToast } from './toast';
 import Workspace from './Workspace.vue';
 
 type Mode = 'password' | 'sms' | 'register';
@@ -7,6 +9,8 @@ type User = { username: string; nickname: string | null; mobile: string };
 const mode = ref<Mode>('password');
 const username = ref(''); const password = ref(''); const mobile = ref(''); const code = ref(''); const nickname = ref('');
 const showPassword = ref(false); const busy = ref(false); const sending = ref(false); const message = ref(''); const notice = ref('');
+watch(message, value => { if (value) showToast(value, 'error'); }, { flush:'sync' });
+watch(notice, value => { if (value && !value.startsWith('模拟验证码：')) showToast(value, 'success'); }, { flush:'sync' });
 const currentUser = ref<User | null>(null);
 const token = ref(sessionStorage.getItem('nexusops_token') || '');
 
@@ -48,6 +52,7 @@ function logout() { token.value = ''; currentUser.value = null; sessionStorage.r
 </script>
 
 <template>
+  <ToastViewport />
   <Workspace v-if="currentUser" :user="currentUser" :token="token" @updated="currentUser = $event" @logout="logout" />
   <main v-else class="page">
     <section class="story" aria-label="NexusOps 品牌介绍">
@@ -68,7 +73,7 @@ function logout() { token.value = ''; currentUser.value = null; sessionStorage.r
           <label v-if="mode !== 'sms'" for="username">账号<input id="username" v-model.trim="username" autocomplete="username" placeholder="请输入登录账号" required></label>
           <label v-if="mode !== 'sms'" for="password">密码<span class="password-field"><input id="password" v-model="password" :type="showPassword ? 'text' : 'password'" :autocomplete="mode === 'register' ? 'new-password' : 'current-password'" :placeholder="mode === 'register' ? '请设置至少 8 位密码' : '请输入密码'" :minlength="mode === 'register' ? 8 : undefined" required><button type="button" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">{{ showPassword ? '隐藏' : '显示' }}</button></span></label>
           <label v-if="mode === 'register'" for="nickname">昵称 <span class="optional">选填</span><input id="nickname" v-model.trim="nickname" maxlength="80" placeholder="怎么称呼你"></label>
-          <p v-if="message" class="feedback error" role="alert">{{ message }}</p><p v-if="notice" class="feedback notice" role="status">{{ notice }}</p>
+          <p v-if="notice.startsWith('模拟验证码：')" class="feedback notice" role="status">{{ notice }}</p>
           <button class="primary" :disabled="busy" type="submit">{{ busy ? '请稍候…' : mode === 'register' ? '创建账号' : '登 录' }}<span>↗</span></button>
         </form>
         <p class="switch">{{ mode === 'register' ? '已有账号？' : '还没有账号？' }} <button type="button" @click="selectMode(mode === 'register' ? 'password' : 'register')">{{ mode === 'register' ? '返回登录' : '立即注册' }} <span>→</span></button></p>
