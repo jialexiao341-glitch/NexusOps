@@ -1,0 +1,7 @@
+{
+  "name": "nexusops-frontend",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix apps/management-web run dev"
+  }
+}
