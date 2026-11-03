@@ -1,14 +1,19 @@
 """商户与商品 HTTP 接口。"""
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
-from app.merchant import schema, service
+from app.merchant import schema, service, cache
 from app.merchant.model import Merchant, Product, MerchantMembership
+from app.merchant.enum import MERCHANT_CATEGORY_LABELS
 from app.identity.controller import current_user, optional_user
 from app.identity.permissions import require_merchant, require_platform_admin, owned_merchant_ids, is_platform_admin
 
 router = APIRouter(prefix="/api/v1", tags=["商户与商品"])
+
+@router.get('/merchant-categories', summary='查询商户经营类别')
+def merchant_categories():
+    return [{'value': item.value, 'label': label} for item, label in MERCHANT_CATEGORY_LABELS.items()]
 
 @router.post("/merchants", summary="创建商户", response_model=schema.MerchantRead, status_code=201)
 def create_merchant(data: schema.MerchantCreate, db: Session = Depends(get_db), user = Depends(current_user)):
@@ -18,6 +23,7 @@ def create_merchant(data: schema.MerchantCreate, db: Session = Depends(get_db), 
     db.add(item); db.flush()
     db.add(MerchantMembership(merchant_id=item.id, user_id=user.id, role='admin', status='active'))
     db.commit(); db.refresh(item)
+    cache.invalidate(item.id)
     return item
 
 @router.get("/merchants", summary="分页查询商户", response_model=list[schema.MerchantRead])
@@ -28,11 +34,39 @@ def list_merchants(offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le
         query = query.where(or_(Merchant.status == 'active', Merchant.id.in_(owned_merchant_ids(user))))
     return list(db.scalars(query.order_by(Merchant.id).offset(offset).limit(limit)))
 
+@router.get("/merchants/manageable", summary="查询可管理商户", response_model=list[schema.MerchantRead])
+def manageable_merchants(keyword: str = Query('', max_length=120), offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db), user = Depends(current_user)):
+    query = select(Merchant)
+    if not is_platform_admin(db, user):
+        query = query.where(Merchant.id.in_(select(MerchantMembership.merchant_id).where(
+            MerchantMembership.user_id == user.id, MerchantMembership.status == 'active', MerchantMembership.role == 'admin'
+        )))
+    keyword = keyword.strip()
+    if keyword:
+        condition = Merchant.name.contains(keyword, autoescape=True)
+        if keyword.isascii() and keyword.isdigit() and len(keyword) <= 18:
+            condition = or_(condition, Merchant.id == int(keyword))
+        query = query.where(condition)
+    return list(db.scalars(query.order_by(Merchant.id).offset(offset).limit(limit)))
+
 @router.get("/merchants/{item_id}", summary="查询商户详情", response_model=schema.MerchantRead)
 def get_merchant(item_id: int, db: Session = Depends(get_db), user = Depends(optional_user)):
     """按 ID 获取商户详情。"""
-    item = service.require(db, Merchant, item_id)
-    if item.status != 'active' and not (user and is_platform_admin(db, user)):
+    item = cache.get(item_id)
+    if item == cache.MISSING:
+        raise HTTPException(404, '资源不存在')
+    if item is None:
+        item = cache.load_on_miss(item_id, lambda: db.get(Merchant, item_id))
+        if item is None:
+            raise HTTPException(404, '资源不存在')
+    current_status = db.scalar(select(Merchant.status).where(Merchant.id == item_id))
+    if current_status is None:
+        cache.invalidate(item_id)
+        raise HTTPException(404, '资源不存在')
+    if current_status != item.status:
+        item = service.require(db, Merchant, item_id)
+        cache.put(item_id, item)
+    if current_status != 'active' and not (user and is_platform_admin(db, user)):
         if user is None: raise HTTPException(404, '资源不存在')
         require_merchant(db, user, item.id, admin=False)
     return item
@@ -41,13 +75,16 @@ def get_merchant(item_id: int, db: Session = Depends(get_db), user = Depends(opt
 def update_merchant(item_id: int, data: schema.MerchantUpdate, db: Session = Depends(get_db), user = Depends(current_user)):
     """按 ID 部分更新商户信息。"""
     require_merchant(db, user, item_id)
-    return service.update_item(db, Merchant, item_id, data)
+    item = service.update_item(db, Merchant, item_id, data)
+    cache.invalidate(item_id)
+    return item
 
 @router.delete("/merchants/{item_id}", summary="删除商户", status_code=204)
 def delete_merchant(item_id: int, db: Session = Depends(get_db), user = Depends(current_user)):
     """商户存在关联商品时拒绝删除，否则删除商户。"""
     require_merchant(db, user, item_id)
     service.delete_merchant(db, item_id)
+    cache.invalidate(item_id)
     return Response(status_code=204)
 
 @router.post("/products", summary="创建商品", response_model=schema.ProductRead, status_code=201)
@@ -58,11 +95,13 @@ def create_product(data: schema.ProductCreate, db: Session = Depends(get_db), us
     return service.create_product(db, data)
 
 @router.get("/products", summary="分页查询商品", response_model=list[schema.ProductRead])
-def list_products(offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db), user = Depends(optional_user)):
+def list_products(offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100), merchant_id: int | None = Query(None, gt=0), category_id: int | None = Query(None, gt=0), db: Session = Depends(get_db), user = Depends(optional_user)):
     """分页返回商品列表。"""
-    query = select(Product).join(Merchant, Merchant.id == Product.merchant_id)
+    query = select(Product).options(joinedload(Product.merchant), joinedload(Product.category)).join(Merchant, Merchant.id == Product.merchant_id)
     if not user or not is_platform_admin(db, user):
         query = query.where(or_((Product.status == 'active') & (Merchant.status == 'active'), Product.merchant_id.in_(owned_merchant_ids(user))))
+    if merchant_id is not None: query = query.where(Product.merchant_id == merchant_id)
+    if category_id is not None: query = query.where(Product.category_id == category_id)
     return list(db.scalars(query.order_by(Product.id).offset(offset).limit(limit)))
 
 @router.get("/products/{item_id}", summary="查询商品详情", response_model=schema.ProductRead)

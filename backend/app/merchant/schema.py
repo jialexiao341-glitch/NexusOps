@@ -2,16 +2,19 @@
 from decimal import Decimal
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
+from app.merchant.enum import MerchantCategory
 
 Status = Literal["active", "inactive"]
 class MerchantCreate(BaseModel):
     """创建商户时提交的数据。"""
     name: str = Field(min_length=1, max_length=120, description="名称")
+    category: MerchantCategory | None = None
     description: str = Field(default="", max_length=500, description="商户描述")
     status: Status = "active"
 class MerchantUpdate(BaseModel):
     """部分更新商户时提交的数据。"""
     name: str | None = Field(default=None, min_length=1, max_length=120)
+    category: MerchantCategory | None = None
     description: str | None = Field(default=None, max_length=500)
     status: Status | None = None
 class MerchantRead(MerchantCreate):
@@ -35,4 +38,6 @@ class ProductRead(ProductCreate):
     """返回给客户端的商品信息。"""
     model_config = ConfigDict(from_attributes=True)
     id: int
+    merchant_name: str
+    category_name: str | None
 

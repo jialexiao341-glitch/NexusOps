@@ -87,3 +87,39 @@ def test_category_sku_inventory_flow(business_client):
     assert client.delete(f'{api}/skus/{sid}').status_code == 204
     assert client.delete(f'{api}/products/{pid}').status_code == 204
     assert client.delete(f'{api}/categories/{cid}').status_code == 204
+
+def test_merchant_category_is_validated_and_editable(business_client):
+    client = business_client
+    options = client.get('/api/v1/merchant-categories')
+    assert options.status_code == 200
+    assert any(option['value'] == 'dining' for option in options.json())
+    created = client.post('/api/v1/merchants', json={'name':'Shop','category':'dining'})
+    assert created.status_code == 201 and created.json()['category'] == 'dining'
+    mid = created.json()['id']
+    assert client.patch(f'/api/v1/merchants/{mid}', json={'category':'retail'}).json()['category'] == 'retail'
+    assert client.patch(f'/api/v1/merchants/{mid}', json={'category':'wrong'}).status_code == 422
+    assert client.patch(f'/api/v1/merchants/{mid}', json={'category':None}).json()['category'] is None
+
+def test_product_responses_include_merchant_name(business_client):
+    client = business_client
+    mid = client.post('/api/v1/merchants', json={'name':'Merchant A'}).json()['id']
+    result = client.post('/api/v1/products', json={'merchant_id':mid,'name':'Item','price':'8.00'})
+    assert result.status_code == 201 and result.json()['merchant_name'] == 'Merchant A'
+    pid = result.json()['id']
+    assert client.get(f'/api/v1/products/{pid}').json()['merchant_name'] == 'Merchant A'
+    assert client.get('/api/v1/products').json()[0]['merchant_name'] == 'Merchant A'
+    client.patch(f'/api/v1/merchants/{mid}', json={'name':'Merchant B'})
+    assert client.get(f'/api/v1/products/{pid}').json()['merchant_name'] == 'Merchant B'
+
+def test_product_filter_and_category_order(business_client):
+    client = business_client
+    mid = client.post('/api/v1/merchants', json={'name':'Shop'}).json()['id']
+    other = client.post('/api/v1/merchants', json={'name':'Other'}).json()['id']
+    late = client.post('/api/v1/categories', json={'merchant_id':mid,'name':'Late','sort_order':10}).json()
+    early = client.post('/api/v1/categories', json={'merchant_id':mid,'name':'Early','sort_order':1}).json()
+    assert [c['id'] for c in client.get(f'/api/v1/categories?merchant_id={mid}').json()] == [early['id'],late['id']]
+    pid = client.post('/api/v1/products', json={'merchant_id':mid,'category_id':early['id'],'name':'Tea','price':'4'}).json()['id']
+    client.post('/api/v1/products', json={'merchant_id':other,'name':'Coffee','price':'5'})
+    found = client.get(f"/api/v1/products?merchant_id={mid}&category_id={early['id']}").json()
+    assert len(found) == 1 and found[0]['id'] == pid and found[0]['category_name'] == 'Early'
+    assert client.get(f'/api/v1/products?merchant_id={other}&category_id={early["id"]}').json() == []

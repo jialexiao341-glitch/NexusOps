@@ -65,3 +65,10 @@ def update_me(data: schema.ProfileUpdate, user = Depends(current_user), db: Sess
     db.commit()
     db.refresh(user)
     return user
+
+@router.put("/users/me/avatar", response_model=schema.UserRead, summary="更新头像")
+def update_avatar(data: schema.AvatarUpdate, user = Depends(current_user), db: Session = Depends(get_db)):
+    user.avatar = data.avatar
+    db.commit()
+    db.refresh(user)
+    return user

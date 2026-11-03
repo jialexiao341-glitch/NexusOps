@@ -29,3 +29,16 @@ def test_auth_boundaries(client, monkeypatch):
     monkeypatch.setenv("NEXUSOPS_ENV", "test")
     assert client.get("/api/v1/users/me").status_code == 401
     assert client.patch("/api/v1/users/me", json={"username": "changed"}).status_code == 401
+
+def test_avatar_persistence_and_validation(client):
+    import base64
+    code = client.post('/api/v1/auth/codes', json={'mobile':'13800138010','purpose':'register'}).json()['code']
+    client.post('/api/v1/auth/register', json={'mobile':'13800138010','code':code,'username':'avatar_user','password':'password123'})
+    token = client.post('/api/v1/auth/login', json={'username':'avatar_user','password':'password123'}).json()['access_token']
+    headers = {'Authorization':f'Bearer {token}'}
+    avatar = 'data:image/jpeg;base64,' + base64.b64encode(b'\xff\xd8\xffexample\xff\xd9').decode()
+    assert client.put('/api/v1/users/me/avatar', json={'avatar':avatar}, headers=headers).json()['avatar'] == avatar
+    assert client.get('/api/v1/users/me', headers=headers).json()['avatar'] == avatar
+    assert client.put('/api/v1/users/me/avatar', json={'avatar':'data:image/svg+xml;base64,PHN2Zz4='}, headers=headers).status_code == 422
+    assert client.put('/api/v1/users/me/avatar', json={'avatar':None}, headers=headers).json()['avatar'] is None
+    assert client.put('/api/v1/users/me/avatar', json={'avatar':avatar}).status_code == 401

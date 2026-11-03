@@ -3,7 +3,7 @@ from fastapi import HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 from app.merchant import crud
-from app.merchant.model import Inventory, Merchant, MerchantMembership, Product, ProductSku, ProductCategory
+from app.merchant.model import Inventory, Merchant, MerchantMembership, Product, ProductSku, ProductCategory, VoucherCampaign
 
 def require(db: Session, model, item_id: int):
     """按主键查找记录；不存在时返回 404。"""
@@ -34,7 +34,7 @@ def create_product(db: Session, data):
 def update_item(db: Session, model, item_id: int, data):
     """校验更新字段后修改指定记录。"""
     values = data.model_dump(exclude_unset=True)
-    if any(value is None and not (model is Product and key == "category_id") for key, value in values.items()):
+    if any(value is None and not ((model is Product and key == "category_id") or (model is Merchant and key == "category")) for key, value in values.items()):
         raise HTTPException(status_code=422, detail="字段不能为 null")
     item = require(db, model, item_id)
     if model is Product and "category_id" in values:
@@ -50,6 +50,8 @@ def delete_merchant(db: Session, item_id: int):
         raise HTTPException(status_code=409, detail="商户存在分类，不能删除")
     if db.scalar(select(Product.id).where(Product.merchant_id == item_id).limit(1)) is not None:
         raise HTTPException(status_code=409, detail="商户存在商品，不能删除")
+    if db.scalar(select(VoucherCampaign.id).where(VoucherCampaign.merchant_id == item_id).limit(1)) is not None:
+        raise HTTPException(status_code=409, detail="商户存在优惠券活动，不能删除")
     db.execute(delete(MerchantMembership).where(MerchantMembership.merchant_id == item_id))
     crud.delete(db, item)
 

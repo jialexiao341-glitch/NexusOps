@@ -134,3 +134,18 @@ def test_admin_creates_user_without_granting_roles(client):
     assert client.post('/api/v1/auth/login/sms', json={'mobile':payload['mobile'], 'code':code}).status_code == 200
     with next(app.dependency_overrides[get_db]()) as db:
         assert db.get(User, response.json()['id']).mobile_verified_at is not None
+
+def test_manageable_merchant_search_and_pagination(client):
+    with next(app.dependency_overrides[get_db]()) as db:
+        users = [User(username=n, mobile=str(13000000060+i), password_hash='x', status='active') for i,n in enumerate(('platform2','owner2','staff2'))]
+        shops = [Merchant(name=n, status='active') for n in ('茶馆一','茶馆二','其他')]
+        db.add_all(users + shops); db.flush()
+        db.add_all([UserPlatformRole(user_id=users[0].id, role='platform_admin'), MerchantMembership(user_id=users[1].id, merchant_id=shops[1].id, role='admin', status='active'), MerchantMembership(user_id=users[2].id, merchant_id=shops[0].id, role='staff', status='active')]); db.commit()
+        headers = [{'Authorization':'Bearer '+tokens(u)['access_token']} for u in users]
+        ids = [s.id for s in shops]
+    path='/api/v1/merchants/manageable'
+    assert client.get(path).status_code == 401
+    assert [m['id'] for m in client.get(path, headers=headers[1]).json()] == [ids[1]]
+    assert client.get(path, headers=headers[2]).json() == []
+    assert [m['id'] for m in client.get(path, params={'keyword':'茶馆','offset':1,'limit':1}, headers=headers[0]).json()] == [ids[1]]
+    assert [m['id'] for m in client.get(path, params={'keyword':str(ids[2])}, headers=headers[0]).json()] == [ids[2]]

@@ -91,7 +91,7 @@ def categories(merchant_id: int | None = Query(None, gt=0), offset: int = Query(
     if not user or not is_platform_admin(db, user):
         query = query.where(or_((ProductCategory.status == 'active') & (Merchant.status == 'active'), ProductCategory.merchant_id.in_(owned_merchant_ids(user))))
     if merchant_id is not None: query = query.where(ProductCategory.merchant_id == merchant_id)
-    return list(db.scalars(query.order_by(ProductCategory.id).offset(offset).limit(limit)))
+    return list(db.scalars(query.order_by(ProductCategory.sort_order, ProductCategory.id).offset(offset).limit(limit)))
 
 @router.get('/categories/{item_id}', response_model=CategoryRead)
 def category(item_id: int, db: Session = Depends(get_db), user = Depends(optional_user)):

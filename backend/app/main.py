@@ -4,6 +4,7 @@ from app.merchant.controller import router
 from app.merchant.catalog import router as catalog_router
 from app.identity.controller import router as identity_router
 from app.identity.members import router as members_router
+from app.merchant.vouchers import router as voucher_router
 
 logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="NexusOps API")
@@ -11,6 +12,7 @@ app.include_router(router)
 app.include_router(catalog_router)
 app.include_router(identity_router)
 app.include_router(members_router)
+app.include_router(voucher_router)
 
 @app.get("/health", tags=["health"])
 def health():

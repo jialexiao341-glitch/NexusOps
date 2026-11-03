@@ -1,6 +1,8 @@
 """身份认证和用户资料接口的数据格式。"""
+import base64
+import binascii
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class CodeRequest(BaseModel):
     """请求发送指定用途的验证码。"""
@@ -36,6 +38,23 @@ class UserRead(BaseModel):
     mobile: str
     nickname: str | None
     status: str
+    avatar: str | None = None
+
+class AvatarUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    avatar: str | None = Field(max_length=48000)
+
+    @field_validator("avatar")
+    @classmethod
+    def validate_avatar(cls, value):
+        if value is None: return None
+        prefix = "data:image/jpeg;base64,"
+        if not value.startswith(prefix): raise ValueError("头像格式无效")
+        try: image = base64.b64decode(value[len(prefix):], validate=True)
+        except (binascii.Error, ValueError): raise ValueError("头像格式无效")
+        if not image.startswith(b"\xff\xd8\xff") or not image.endswith(b"\xff\xd9"): raise ValueError("头像格式无效")
+        return value
+
 class ProfileUpdate(BaseModel):
     """只允许更新昵称。"""
     model_config = ConfigDict(extra="forbid")

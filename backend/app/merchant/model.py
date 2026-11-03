@@ -1,7 +1,7 @@
 """第一阶段数据库模型；具体业务规则由服务层落实。"""
 from datetime import datetime, timezone
 from decimal import Decimal
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
@@ -24,6 +24,7 @@ class User(Timestamps, Base):
     username: Mapped[str] = mapped_column(String(64), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     nickname: Mapped[str | None] = mapped_column(String(80))
+    avatar: Mapped[str | None] = mapped_column(Text, nullable=True)
     mobile_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active")
 
@@ -32,6 +33,7 @@ class Merchant(Timestamps, Base):
     __tablename__ = "merchants"
     id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(120), index=True)
+    category: Mapped[str | None] = mapped_column(String(30), nullable=True)
     description: Mapped[str | None] = mapped_column(String(500), default="")
     address: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(20), default="pending")
@@ -75,7 +77,17 @@ class Product(Timestamps, Base):
     name: Mapped[str] = mapped_column(String(120), index=True)
     description: Mapped[str | None] = mapped_column(String(500))
     status: Mapped[str] = mapped_column(String(20), default="inactive")
+    merchant: Mapped[Merchant] = relationship()
+    category: Mapped[ProductCategory | None] = relationship()
     skus: Mapped[list["ProductSku"]] = relationship(back_populates="product", cascade="all, delete-orphan", order_by="ProductSku.id")
+
+    @property
+    def merchant_name(self):
+        return self.merchant.name
+
+    @property
+    def category_name(self):
+        return self.category.name if self.category else None
 
     @property
     def price(self):
@@ -120,13 +132,14 @@ class VoucherCampaign(Timestamps, Base):
     status: Mapped[str] = mapped_column(String(20), default="draft")
 
 class VoucherOrder(Timestamps, Base):
-    """优惠券购买记录，限购及取消策略暂按草案实现。"""
+    """同一用户每个活动最多一笔有效订单，关闭订单保留历史。"""
     __tablename__ = "voucher_orders"
-    __table_args__ = (UniqueConstraint("campaign_id", "user_id"), UniqueConstraint("user_id", "request_id"), CheckConstraint("amount_snapshot >= 0", name="ck_voucher_order_amount"))
+    __table_args__ = (UniqueConstraint("campaign_id", "user_id", "active_marker", name="uq_voucher_order_active"), UniqueConstraint("user_id", "request_id"), CheckConstraint("amount_snapshot >= 0", name="ck_voucher_order_amount"), CheckConstraint("(status IN ('created', 'paid') AND active_marker IS NOT NULL AND active_marker = 1) OR (status IN ('cancelled', 'expired') AND active_marker IS NULL)", name="ck_voucher_order_active"))
     id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
     campaign_id: Mapped[int] = mapped_column(ID, ForeignKey("voucher_campaigns.id", ondelete="RESTRICT"))
     user_id: Mapped[int] = mapped_column(ID, ForeignKey("users.id", ondelete="RESTRICT"))
     request_id: Mapped[str] = mapped_column(String(64))
     amount_snapshot: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     status: Mapped[str] = mapped_column(String(20), default="created")
+    active_marker: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
 
