@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { closeTabs, type CloseTabScope } from './tab-state';
-import { LayoutDashboard, Database, Settings, ShoppingCart, Megaphone, ChevronDown, Store, Package, Tags, UserRound, UsersRound, UserRoundCog, Network, Activity, Bell, LogOut, Pin, PinOff, Maximize2, Minimize2, RotateCw, ExternalLink, ArrowLeftToLine, ArrowRightToLine, FoldHorizontal, ArrowRightLeft, X } from '@lucide/vue';
+import { LayoutDashboard, Database, Settings, ShoppingCart, Megaphone, ChevronDown, Store, Package, UserRound, UsersRound, UserRoundCog, Network, Activity, Bell, LogOut, Pin, PinOff, Maximize2, Minimize2, RotateCw, ExternalLink, ArrowLeftToLine, ArrowRightToLine, FoldHorizontal, ArrowRightLeft, X } from '@lucide/vue';
 import ManagementList from './ManagementList.vue';
 import Profile from './Profile.vue';
-import Catalog from './Catalog.vue';
+import VoucherManagement from './VoucherManagement.vue';
+import VoucherOrders from './VoucherOrders.vue';
 import UserManagement from './UserManagement.vue';
-defineProps<{ user: { username: string; nickname: string | null; mobile: string }; token: string }>();
-const tabNames = ['工作台', '商户管理', '商品管理', '分类与规格', '个人中心', '用户管理'];
+defineProps<{ user: { username: string; nickname: string | null; mobile: string; avatar: string | null }; token: string }>();
+const tabNames = ['工作台', '商户管理', '商品管理', '优惠券活动', '优惠券订单', '个人中心', '用户管理'];
 const requestedTab = new URLSearchParams(window.location.search).get('tab');
 const initialTab = requestedTab && tabNames.includes(requestedTab) ? requestedTab : '工作台';
 function loadPinnedTabs():string[] {
@@ -21,9 +22,12 @@ const pinnedTabs = ref<string[]>(loadPinnedTabs());
 const openTabs = ref<string[]>(pinnedTabs.value.includes(initialTab) ? [...pinnedTabs.value] : [...pinnedTabs.value, initialTab]);
 watch(pinnedTabs, value=>sessionStorage.setItem('nexusops_pinned_tabs', JSON.stringify(value)), {deep:true});
 const versions = ref<Record<string, number>>({});
+const orderTarget = ref<{id:number; sequence:number} | null>(null);
+function openVoucherOrder(id:number) { orderTarget.value={id, sequence:(orderTarget.value?.sequence || 0)+1}; page.value='优惠券订单'; }
+function voucherCancelled() { versions.value['优惠券活动']=(versions.value['优惠券活动'] || 0)+1; }
 const tabMenu = ref<{name:string; x:number; y:number} | null>(null);
 const maximized = ref(false);
-const tabIcons: Record<string, typeof LayoutDashboard> = { '工作台': LayoutDashboard, '商户管理': Store, '商品管理': Package, '分类与规格': Tags, '个人中心': UserRound, '用户管理': UsersRound, '角色管理': UserRoundCog, '部门管理': Network, '运行监控': Activity };
+const tabIcons: Record<string, typeof LayoutDashboard> = { '工作台': LayoutDashboard, '商户管理': Store, '商品管理': Package, '优惠券活动': Megaphone, '优惠券订单': ShoppingCart, '个人中心': UserRound, '用户管理': UsersRound, '角色管理': UserRoundCog, '部门管理': Network, '运行监控': Activity };
 watch(page, value => { if (!openTabs.value.includes(value)) openTabs.value.push(value); }, { flush: 'sync' });
 function closeTab(name: string) { runClose(name, 'current'); }
 function runClose(name:string, scope:CloseTabScope) {
@@ -80,12 +84,12 @@ function handleMenuKey(event: KeyboardEvent) { if (event.key === 'Escape') { if 
 onMounted(() => { document.addEventListener('click', closeUserMenu); document.addEventListener('keydown', handleMenuKey); });
 onUnmounted(() => { document.removeEventListener('click', closeUserMenu); document.removeEventListener('keydown', handleMenuKey); });
 function openUserPage(name: string) { page.value = name; userMenuOpen.value = false; }
-const available = ['工作台', '商户管理', '商品管理', '分类与规格', '个人中心', '用户管理'];
-defineEmits<{ logout: []; updated: [user: { username: string; nickname: string | null; mobile: string }] }>();
+const available = ['工作台', '商户管理', '商品管理', '优惠券活动', '优惠券订单', '个人中心', '用户管理'];
+defineEmits<{ logout: []; updated: [user: { username: string; nickname: string | null; mobile: string; avatar: string | null }] }>();
 const openGroups = ref<string[]>(['业务管理']);
 function toggleGroup(group:string) { openGroups.value = openGroups.value.includes(group) ? openGroups.value.filter(item => item !== group) : [...openGroups.value, group]; }
-const groups = [{ title:'业务管理', icon:Database, items:['商户管理','商品管理','分类与规格'] }, { title:'平台管理', icon:Settings, items:['用户管理','角色管理','部门管理','运行监控'] }];
-const shortcuts = [{ icon: '▦', name: '商户管理', desc: '查看与管理入驻商户' }, { icon: '◇', name: '商品管理', desc: '管理商品与库存信息' }, { icon: '≡', name: '交易管理', desc: '跟进订单与交易状态' }, { icon: '✳', name: '营销活动', desc: '规划商圈运营活动' }];
+const groups = [{ title:'业务管理', icon:Database, items:['商户管理','商品管理','优惠券活动','优惠券订单'] }, { title:'平台管理', icon:Settings, items:['用户管理','角色管理','部门管理','运行监控'] }];
+const shortcuts = [{ icon: '▦', name: '商户管理', desc: '查看与管理入驻商户' }, { icon: '◇', name: '商品管理', desc: '管理商品与库存信息' }, { icon: '≡', name: '交易管理', desc: '跟进订单与交易状态' }, { icon: '✳', name: '优惠券活动', desc: '管理活动与优惠券订单' }];
 </script>
 <template>
   <div class="workspace" :class="{ 'sidebar-hidden': collapsed, 'content-maximized': maximized }">
@@ -104,13 +108,14 @@ const shortcuts = [{ icon: '▦', name: '商户管理', desc: '查看与管理�
       <div class="side-bottom"><span class="status-dot"></span><div><strong>运营工作台</strong><small>让每一份经营更从容</small></div></div>
     </aside>
     <div class="workspace-main">
-      <header class="topbar"><div class="topbar-start"><button class="sidebar-toggle" type="button" :aria-label="collapsed ? '展开侧边栏' : '收起侧边栏'" :aria-expanded="!collapsed" @click="collapsed = !collapsed"><span aria-hidden="true"></span></button><div class="breadcrumb"><span class="crumb-icon">▤</span> 业务管理 <span>›</span> <strong>{{ page }}</strong></div></div><div class="top-user"><div ref="userMenu" class="user-menu"><button class="avatar-trigger" type="button" aria-label="账户菜单" aria-haspopup="true" :aria-expanded="userMenuOpen" @click="userMenuOpen=!userMenuOpen"><span class="avatar">{{ (user.nickname || user.username).slice(0, 1) }}</span><span class="online-dot" aria-hidden="true"></span></button><div v-if="userMenuOpen" class="user-dropdown"><div class="user-dropdown-header"><span class="menu-avatar">{{ (user.nickname || user.username).slice(0, 1) }}<span class="online-dot" aria-hidden="true"></span></span><span class="user-dropdown-identity"><strong>{{ user.nickname || user.username }}</strong><small>{{ user.username }}</small></span></div><div class="user-dropdown-actions"><button type="button" @click="openUserPage('工作台')"><LayoutDashboard aria-hidden="true" />运营总览</button><button type="button" @click="openUserPage('个人中心')"><UserRound aria-hidden="true" />个人中心</button><button type="button" disabled title="站内通知尚未开放"><Bell aria-hidden="true" />站内通知</button><button type="button" class="menu-logout" @click="$emit('logout')"><LogOut aria-hidden="true" />退出登录</button></div></div></div></div></header>
+      <header class="topbar"><div class="topbar-start"><button class="sidebar-toggle" type="button" :aria-label="collapsed ? '展开侧边栏' : '收起侧边栏'" :aria-expanded="!collapsed" @click="collapsed = !collapsed"><span aria-hidden="true"></span></button><div class="breadcrumb"><span class="crumb-icon">▤</span> 业务管理 <span>›</span> <strong>{{ page }}</strong></div></div><div class="top-user"><div ref="userMenu" class="user-menu"><button class="avatar-trigger" type="button" aria-label="账户菜单" aria-haspopup="true" :aria-expanded="userMenuOpen" @click="userMenuOpen=!userMenuOpen"><span class="avatar"><img v-if="user.avatar" :src="user.avatar" alt=""><template v-else>{{ (user.nickname || user.username).slice(0, 1) }}</template></span><span class="online-dot" aria-hidden="true"></span></button><div v-if="userMenuOpen" class="user-dropdown"><div class="user-dropdown-header"><span class="menu-avatar"><img v-if="user.avatar" :src="user.avatar" alt=""><template v-else>{{ (user.nickname || user.username).slice(0, 1) }}</template><span class="online-dot" aria-hidden="true"></span></span><span class="user-dropdown-identity"><strong>{{ user.nickname || user.username }}</strong><small>{{ user.username }}</small></span></div><div class="user-dropdown-actions"><button type="button" @click="openUserPage('工作台')"><LayoutDashboard aria-hidden="true" />运营总览</button><button type="button" @click="openUserPage('个人中心')"><UserRound aria-hidden="true" />个人中心</button><button type="button" disabled title="站内通知尚未开放"><Bell aria-hidden="true" />站内通知</button><button type="button" class="menu-logout" @click="$emit('logout')"><LogOut aria-hidden="true" />退出登录</button></div></div></div></div></header>
       <div class="page-tabs" aria-label="已打开的页面"><div class="tab-list"><div v-for="name in openTabs" :key="name" class="page-tab" :class="{ 'active-tab': page === name }" @contextmenu.prevent="openTabMenu($event, name)"><button class="tab-select" :aria-current="page === name ? 'page' : undefined" @click="page = name"><component :is="tabIcons[name]" class="tab-icon" aria-hidden="true" />{{name}}</button><Pin v-if="pinnedTabs.includes(name)" class="tab-pin" aria-label="已固定" /><button v-else class="tab-close" :aria-label="`关闭${name}`" @click="closeTab(name)"><X aria-hidden="true" /></button></div></div></div>
       <Teleport to="body"><div v-if="tabMenu" class="tab-context-menu" role="menu" :style="{left:tabMenu.x+'px',top:tabMenu.y+'px'}" @contextmenu.prevent><template v-for="item in tabMenuItems" :key="item.key"><button type="button" role="menuitem" :disabled="item.disabled" @click="executeTabAction(item)"><component :is="item.icon" aria-hidden="true" /><span>{{ item.label }}</span></button><div v-if="item.separator" class="tab-menu-separator"></div></template></div></Teleport>
       <button v-if="maximized" class="restore-view" aria-label="退出最大化" title="退出最大化" @click="maximized=false"><Minimize2 aria-hidden="true" /></button>
       <ManagementList v-if="openTabs.includes('商户管理')" :key="'商户管理-'+(versions['商户管理'] || 0)" v-show="page === '商户管理'" kind="merchant" :token="token" />
       <ManagementList v-if="openTabs.includes('商品管理')" :key="'商品管理-'+(versions['商品管理'] || 0)" v-show="page === '商品管理'" kind="product" :token="token" />
-      <Catalog :token="token" v-if="openTabs.includes('分类与规格')" :key="'分类与规格-'+(versions['分类与规格'] || 0)" v-show="page === '分类与规格'" />
+      <VoucherManagement v-if="openTabs.includes('优惠券活动')" :key="'优惠券活动-'+(versions['优惠券活动'] || 0)" v-show="page === '优惠券活动'" :token="token" :username="user.username" @open-order="openVoucherOrder" />
+      <VoucherOrders v-if="openTabs.includes('优惠券订单')" :key="'优惠券订单-'+(versions['优惠券订单'] || 0)" v-show="page === '优惠券订单'" :token="token" :username="user.username" :target="orderTarget" @cancelled="voucherCancelled" />
       <UserManagement v-if="openTabs.includes('用户管理')" :key="'用户管理-'+(versions['用户管理'] || 0)" v-show="page === '用户管理'" :token="token" />
       <Profile v-if="openTabs.includes('个人中心')" :key="'个人中心-'+(versions['个人中心'] || 0)" v-show="page === '个人中心'" :user="user" :token="token" @updated="$emit('updated', $event)" />
       <main :key="'工作台-'+(versions['工作台'] || 0)" v-show="page === '工作台'" class="dashboard">
@@ -154,6 +159,7 @@ const shortcuts = [{ icon: '▦', name: '商户管理', desc: '查看与管理�
 
 /* 标签右键菜单对齐参考项目的图标、间距与分组。 */
 .tab-pin{width:15px;height:15px;margin:0 12px 0 2px;flex:none;stroke-width:1.8}.tab-context-menu{position:fixed;z-index:1000;width:214px;max-height:calc(100vh - 8px);overflow-y:auto;padding:5px;background:#fff;border:1px solid #dce4ef;border-radius:7px;box-shadow:0 3px 10px #172b4d26;color:#172233}.tab-context-menu button{display:flex;align-items:center;gap:14px;width:100%;height:40px;padding:0 10px;border:0;border-radius:5px;background:transparent;color:inherit;text-align:left;font:14px 'Microsoft YaHei',sans-serif;cursor:pointer;white-space:nowrap}.tab-context-menu button svg{width:17px;height:17px;flex:none;stroke-width:1.8}.tab-context-menu button:hover:not(:disabled),.tab-context-menu button:focus-visible{background:#eef2f7;outline:none}.tab-context-menu button:disabled{color:#a4adba;cursor:not-allowed}.tab-menu-separator{height:1px;background:#e1e6ee;margin:4px -5px}.content-maximized .sidebar,.content-maximized .topbar,.content-maximized .page-tabs{display:none}.content-maximized .workspace-main{width:100%;height:100vh}.restore-view{position:fixed;right:16px;top:16px;z-index:900;display:grid;place-items:center;width:36px;height:36px;border:1px solid #dce4ef;border-radius:6px;background:#fff;color:#5267ff;box-shadow:0 2px 8px #172b4d1c;cursor:pointer}.restore-view svg{width:18px;height:18px}
+.avatar img,.menu-avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover}
 </style>
 
 

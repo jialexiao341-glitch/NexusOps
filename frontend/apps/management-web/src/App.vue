@@ -5,7 +5,7 @@ import { showToast } from './toast';
 import Workspace from './Workspace.vue';
 
 type Mode = 'password' | 'sms' | 'register';
-type User = { username: string; nickname: string | null; mobile: string };
+type User = { username: string; nickname: string | null; mobile: string; avatar: string | null };
 const mode = ref<Mode>('password');
 const username = ref(''); const password = ref(''); const mobile = ref(''); const code = ref(''); const nickname = ref('');
 const showPassword = ref(false); const busy = ref(false); const sending = ref(false); const message = ref(''); const notice = ref('');
@@ -44,6 +44,9 @@ async function submit() {
     }
     const result = await request<{access_token: string}>(mode.value === 'password' ? '/auth/login' : '/auth/login/sms', mode.value === 'password' ? { username: username.value, password: password.value } : { mobile: mobile.value, code: code.value });
     token.value = result.access_token; sessionStorage.setItem('nexusops_token', token.value);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('tab');
+    window.history.replaceState(window.history.state, '', url);
     await loadUser();
     if (!currentUser.value) throw new Error('获取用户信息失败，请重新登录。');
   } catch (error) { message.value = (error as Error).message; } finally { busy.value = false; }
